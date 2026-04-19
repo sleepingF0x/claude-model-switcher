@@ -1,6 +1,6 @@
 {
   "name": "@blazethan/claude-model-switcher",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Interactive CLI to switch Claude Code model settings when using CLI Proxy API",
   "type": "module",
   "bin": {

@@ -11,11 +11,28 @@ interface ModelGroup {
 }
 
 interface SelectionMemory {
-  topLevelValue?: string;
-  modelValue?: string;
+  topLevelIndex?: number;
+  modelIndex?: number;
+  groupPrefix?: string;
 }
 
 const selectionMemory: SelectionMemory = {};
+
+function getDefaultValueByIndex<T extends string>(
+  choices: readonly { value: T }[],
+  index: number | undefined,
+): T | undefined {
+  if (index === undefined) return undefined;
+  return choices[index]?.value;
+}
+
+function getChoiceIndex<T extends string>(
+  choices: readonly { value: T }[],
+  value: T,
+): number {
+  const index = choices.findIndex((choice) => choice.value === value);
+  return index >= 0 ? index : 0;
+}
 
 function parseModel(modelId: string): { family: string; version: number[]; date: number } {
   const name = modelId.includes("/") ? modelId.split("/").slice(1).join("/") : modelId;
@@ -116,7 +133,18 @@ export async function selectModelForRole(
     : `${role.label} ${chalk.dim("(not set)")}`;
 
   if (groups.length === 0) {
+    selectionMemory.groupPrefix = undefined;
     return selectFromFlatList(ungrouped, header, role.hint, currentValue);
+  }
+
+  if (selectionMemory.groupPrefix) {
+    const rememberedGroup = groups.find((group) => group.prefix === selectionMemory.groupPrefix);
+    if (rememberedGroup) {
+      const result = await selectFromGroup(rememberedGroup, header, role.hint, currentValue);
+      if (result !== BACK_VALUE) {
+        return result;
+      }
+    }
   }
 
   while (true) {
@@ -146,23 +174,25 @@ export async function selectModelForRole(
       message: header,
       choices,
       loop: false,
-      default: selectionMemory.topLevelValue,
+      default: getDefaultValueByIndex(choices, selectionMemory.topLevelIndex),
     });
 
+    selectionMemory.topLevelIndex = getChoiceIndex(choices, picked);
+
     if (picked === SKIP_VALUE) {
-      selectionMemory.topLevelValue = picked;
       return null;
     }
 
-    selectionMemory.topLevelValue = picked;
-
     if (picked.startsWith("__group__")) {
       const prefix = picked.slice("__group__".length);
+      selectionMemory.groupPrefix = prefix;
       const group = groups.find((g) => g.prefix === prefix)!;
       const result = await selectFromGroup(group, header, role.hint, currentValue);
       if (result === BACK_VALUE) continue;
       return result;
     }
+
+    selectionMemory.groupPrefix = undefined;
 
     return picked;
   }
@@ -188,13 +218,12 @@ async function selectFromFlatList(
     message: header,
     choices,
     loop: false,
-    default: selectionMemory.modelValue,
+    default: getDefaultValueByIndex(choices, selectionMemory.modelIndex),
   });
+  selectionMemory.modelIndex = getChoiceIndex(choices, answer);
   if (answer === SKIP_VALUE) {
-    selectionMemory.modelValue = answer;
     return null;
   }
-  selectionMemory.modelValue = answer;
   return answer;
 }
 
@@ -219,15 +248,15 @@ async function selectFromGroup(
     message: `${header} — ${chalk.bold(group.prefix)}`,
     choices,
     loop: false,
-    default: selectionMemory.modelValue,
+    default: getDefaultValueByIndex(choices, selectionMemory.modelIndex),
   });
 
+  selectionMemory.modelIndex = getChoiceIndex(choices, answer);
   if (answer === SKIP_VALUE) {
-    selectionMemory.modelValue = answer;
     return null;
   }
   if (answer === BACK_VALUE) return BACK_VALUE;
-  selectionMemory.modelValue = answer;
+  selectionMemory.groupPrefix = group.prefix;
   return answer;
 }
 
